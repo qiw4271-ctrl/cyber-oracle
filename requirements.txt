@@ -1,0 +1,7 @@
+streamlit
+kerykeion
+openai
+requests
+streamlit-extras
+pathlib
+pyswisseph
