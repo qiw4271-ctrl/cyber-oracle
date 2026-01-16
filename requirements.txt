@@ -1,7 +1,6 @@
 streamlit
-kerykeion
 openai
-requests
-streamlit-extras
-pathlib
-pyswisseph
+kerykeion
+geopy
+timezonefinder
+lxml
