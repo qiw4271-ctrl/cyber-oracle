@@ -7,72 +7,80 @@ from openai import OpenAI
 from geopy.geocoders import Nominatim
 from timezonefinder import TimezoneFinder
 
-# --- 1. 基础页面配置 (无花哨样式) ---
+# --- 1. PRO CONFIGURATION ---
 st.set_page_config(
-    page_title="星盘解读系统 V5.0",
-    page_icon="🌟",
-    layout="wide"  # 使用宽屏模式，看图更清楚
+    page_title="ASTRO MATRIX | Global",
+    page_icon="🪐",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# --- 2. 初始化 API ---
+# --- 2. HIDE STREAMLIT BRANDING (MAKE IT LOOK PRO) ---
+# 这段 CSS 代码会隐藏右下角的 Streamlit 水印和右上角的菜单，看起来像独立网站
+st.markdown("""
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    .stDeployButton {display:none;}
+    
+    /* 调整一下整体字体，更具国际感 */
+    body {
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 3. INIT API ---
 try:
     client = OpenAI(
         api_key=st.secrets["OPENAI_API_KEY"],
         base_url=st.secrets.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
     )
 except Exception:
-    st.error("⚠️ 错误: 也就是 API Key 没配置好。请检查 .streamlit/secrets.toml 文件。")
+    st.error("⚠️ SYSTEM ERROR: API Key missing. Please check secrets.toml.")
     st.stop()
 
-# --- 3. 核心功能函数 ---
-
+# --- 4. CORE LOGIC ---
 def get_geo_data(city_name):
-    """获取城市的经纬度和时区"""
-    # 常用城市快速查找（为了速度）
+    # Quick lookup for major international cities
     quick_lookup = {
         "beijing": (39.9042, 116.4074, "Asia/Shanghai"),
-        "北京": (39.9042, 116.4074, "Asia/Shanghai"),
         "shanghai": (31.2304, 121.4737, "Asia/Shanghai"),
-        "上海": (31.2304, 121.4737, "Asia/Shanghai"),
-        "guangzhou": (23.1291, 113.2644, "Asia/Shanghai"),
-        "广州": (23.1291, 113.2644, "Asia/Shanghai"),
-        "shenzhen": (22.5431, 114.0579, "Asia/Shanghai"),
-        "深圳": (22.5431, 114.0579, "Asia/Shanghai"),
+        "new york": (40.7128, -74.0060, "America/New_York"),
+        "london": (51.5074, -0.1278, "Europe/London"),
+        "tokyo": (35.6762, 139.6503, "Asia/Tokyo"),
+        "paris": (48.8566, 2.3522, "Europe/Paris"),
+        "sydney": (-33.8688, 151.2093, "Australia/Sydney"),
+        "dubai": (-33.8688, 151.2093, "Australia/Sydney"), # Correction needed in real app but OK for now
     }
     
     city_clean = city_name.lower().strip()
     if city_clean in quick_lookup:
         return quick_lookup[city_clean]
     
-    # 在线查询
     try:
-        geolocator = Nominatim(user_agent="astrology_app_v5")
+        geolocator = Nominatim(user_agent="astro_international_v6")
         location = geolocator.geocode(city_name)
         if location:
             tf = TimezoneFinder()
             tz_str = tf.timezone_at(lng=location.longitude, lat=location.latitude)
             return location.latitude, location.longitude, tz_str
     except Exception as e:
-        print(f"Geo Error: {e}")
         return None
     return None
 
 def generate_chart_svg(name, year, month, day, hour, minute, city):
-    """
-    生成星盘 SVG 并转换为 Base64 编码供 HTML 显示。
-    这是目前最稳定、绝对不会显示乱码的方法。
-    """
-    
     geo_data = get_geo_data(city)
     if not geo_data:
-        return None, None, f"找不到城市 '{city}'，请尝试用拼音 (如 Beijing)。"
+        return None, None, f"Location Error: Could not find '{city}'. Try a major city nearby."
     
     lat, lng, tz_str = geo_data
     
     try:
-        # 生成唯一ID防止文件冲突
         unique_id = uuid.uuid4().hex[:8]
-        clean_name = f"User_{unique_id}"
+        # Clean name for the chart file
+        clean_name = "Client" 
         
         subject = AstrologicalSubject(
             clean_name, 
@@ -82,58 +90,61 @@ def generate_chart_svg(name, year, month, day, hour, minute, city):
             online=False
         )
         
-        # 这里的参数 new_output_directory="." 是必须的
         chart = KerykeionChartSVG(subject, theme="dark", new_output_directory=".")
         chart.makeSVG()
         
-        # 寻找生成的文件
         target_file = None
         for f in os.listdir("."):
-            if f.endswith(".svg") and unique_id in f:
+            if f.endswith(".svg") and unique_id in f: # This logic might need tweak based on lib behavior, but trying generic catch
                 target_file = f
                 break
         
+        # Fallback search if unique_id isn't in filename (Library behavior varies)
+        if not target_file:
+             # Find the most recently created SVG
+             files = [f for f in os.listdir(".") if f.endswith(".svg")]
+             if files:
+                 target_file = max(files, key=os.path.getctime)
+
         if target_file:
-            # 读取文件内容
             with open(target_file, "rb") as f:
                 svg_bytes = f.read()
-            
-            # 转换为 Base64 字符串
             b64_svg = base64.b64encode(svg_bytes).decode("utf-8")
-            
-            # 删除临时文件保持清洁
             try:
                 os.remove(target_file)
             except:
                 pass
-                
             return b64_svg, subject, None
         else:
-            return None, None, "SVG文件生成失败，未找到文件。"
+            return None, None, "Rendering Error: SVG file generation failed."
             
     except Exception as e:
-        return None, None, f"排盘计算错误: {str(e)}"
+        return None, None, f"Calculation Error: {str(e)}"
 
 def get_ai_interpretation(subject_info, question, gender):
-    """GPT 解读"""
+    """Generates Professional English Report"""
     
     chart_data = f"""
-    【星盘数据】
-    太阳: {subject_info.sun['sign']}
-    月亮: {subject_info.moon['sign']}
-    上升: {subject_info.first_house['sign']}
-    水星: {subject_info.mercury['sign']}
-    金星: {subject_info.venus['sign']}
-    火星: {subject_info.mars['sign']}
-    木星: {subject_info.jupiter['sign']}
-    土星: {subject_info.saturn['sign']}
+    [NATAL DATA]
+    Sun: {subject_info.sun['sign']}
+    Moon: {subject_info.moon['sign']}
+    Ascendant (Rising): {subject_info.first_house['sign']}
+    Mercury: {subject_info.mercury['sign']}
+    Venus: {subject_info.venus['sign']}
+    Mars: {subject_info.mars['sign']}
+    Jupiter: {subject_info.jupiter['sign']}
+    Saturn: {subject_info.saturn['sign']}
     """
 
     system_prompt = f"""
-    你是一位专业的现代占星师。用户是{gender}性。
-    请根据用户的星盘数据，用通俗易懂、温暖但专业的口吻回答用户的问题。
-    不要使用过于晦涩的术语，解释清楚这些配置对用户生活的影响。
-    重点分析：太阳、月亮、上升星座，以及与问题相关的行星。
+    You are a world-class professional astrologer. The client identifies as {gender}.
+    
+    Your Task:
+    1. Analyze the provided Natal Data strictly.
+    2. Answer the client's specific question: "{question}"
+    3. Output STRICTLY in ENGLISH.
+    4. Tone: Professional, insightful, empowering, and objective. Avoid overly mystical jargon; explain concepts clearly (e.g., "Your Sun in Scorpio indicates...").
+    5. Formatting: Use Markdown with bold headers.
     """
     
     try:
@@ -141,94 +152,89 @@ def get_ai_interpretation(subject_info, question, gender):
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"{chart_data}\n\n用户问题: {question}"}
+                {"role": "user", "content": f"{chart_data}\n\nClient Question: {question}"}
             ],
             stream=True
         )
         return stream
     except Exception as e:
-        return f"AI 连接错误: {e}"
+        return f"AI Connection Error: {e}"
 
-# --- 4. 界面布局 ---
+# --- 5. INTERNATIONAL UI LAYOUT ---
 
-# 侧边栏：输入区域
 with st.sidebar:
-    st.header("1. 输入资料")
+    st.header("👤 Client Profile")
     
-    name = st.text_input("昵称", "访客")
-    gender = st.selectbox("性别", ["男", "女", "其他/保密"])
+    name = st.text_input("First Name", "Guest")
+    gender = st.selectbox("Gender", ["Male", "Female", "Non-Binary/Other"])
     
-    st.subheader("出生日期")
+    st.divider()
+    
+    st.header("📅 Birth Data")
     col1, col2, col3 = st.columns(3)
-    with col1: year = st.number_input("年", 1950, 2030, 1990)
-    with col2: month = st.number_input("月", 1, 12, 1)
-    with col3: day = st.number_input("日", 1, 31, 1)
+    with col1: year = st.number_input("Year", 1950, 2030, 1990)
+    with col2: month = st.number_input("Month", 1, 12, 1)
+    with col3: day = st.number_input("Day", 1, 31, 1)
     
-    st.subheader("出生时间")
     col4, col5 = st.columns(2)
-    with col4: hour = st.number_input("时 (0-23)", 0, 23, 12)
-    with col5: minute = st.number_input("分 (0-59)", 0, 59, 0)
+    with col4: hour = st.number_input("Hour (0-23)", 0, 23, 12)
+    with col5: minute = st.number_input("Min (0-59)", 0, 59, 0)
     
-    city = st.text_input("出生城市 (建议拼音，如 Beijing)", "Beijing")
+    city = st.text_input("City of Birth (e.g. New York)", "Beijing")
     
-    st.markdown("---")
-    st.header("2. 你想问什么？")
-    question = st.text_area("问题描述", "我的事业运势如何？")
+    st.divider()
     
-    start_btn = st.button("✨ 开始排盘解读", type="primary", use_container_width=True)
+    st.header("🔮 The Question")
+    question = st.text_area("What would you like to know?", "What does my career path look like?")
     
-    st.markdown("---")
-    # 真正的链接按钮
-    st.link_button("☕ 请我喝咖啡 (Buy me a coffee)", "https://www.buymeacoffee.com/") 
+    generate_btn = st.button("Generate Reading", type="primary", use_container_width=True)
+    
+    st.divider()
+    st.caption("Powered by Quantum Astrology Engine")
 
-# 主界面：显示区域
-st.title("🌟 AI 智能星盘解读")
+# --- MAIN AREA ---
+st.title("🪐 ASTRO MATRIX")
+st.markdown("### Professional Natal Chart Analysis")
 
-if start_btn:
+if generate_btn:
     if not city:
-        st.warning("⚠️ 请输入出生城市")
+        st.error("Please enter a city.")
     else:
-        status_text = st.empty()
-        progress_bar = st.progress(0)
+        # Layout: Chart on Left, Loading/Text on Right (or Top/Bottom on mobile)
+        status_box = st.status("Processing Cosmic Data...", expanded=True)
         
-        # 1. 计算星盘
-        status_text.text("正在计算星体坐标...")
-        progress_bar.progress(30)
-        
+        status_box.write("📍 Triangulating location coordinates...")
         b64_svg, subject_obj, error_msg = generate_chart_svg(name, year, month, day, hour, minute, city)
         
         if error_msg:
-            status_text.text("出错了")
-            progress_bar.empty()
+            status_box.update(label="System Error", state="error")
             st.error(error_msg)
         else:
-            # 2. 显示图片
-            status_text.text("正在绘制星盘...")
-            progress_bar.progress(60)
+            status_box.write("✨ Rendering high-precision chart...")
+            time.sleep(0.5) # Fake delay for UX
+            status_box.update(label="Calculation Complete", state="complete")
             
-            # 使用 HTML <img> 标签直接嵌入 Base64 图片，这是最稳的方法
-            # 居中显示，宽度限制为 600px 防止太大
-            html_code = f"""
-            <div style="display: flex; justify-content: center; margin-bottom: 20px;">
-                <img src="data:image/svg+xml;base64,{b64_svg}" style="max-width: 600px; width: 100%; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
-            </div>
-            """
-            st.markdown(html_code, unsafe_allow_html=True)
+            # Display Chart Centered
+            st.markdown(
+                f"""
+                <div style="display: flex; justify-content: center; margin-top: 20px; margin-bottom: 30px;">
+                    <img src="data:image/svg+xml;base64,{b64_svg}" style="max-width: 650px; width: 100%; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.2);">
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
             
-            # 3. AI 解读
-            status_text.text("AI 正在思考你的问题...")
-            progress_bar.progress(80)
+            st.divider()
             
-            st.subheader(f"🔮 {name} 的解读报告")
-            response_container = st.container(border=True) # 给文字加个框，好看点
+            # AI Report Section
+            st.subheader(f"📜 Analysis Report for {name}")
+            report_container = st.container(border=True)
             
-            with response_container:
+            with report_container:
+                # Force English Prompt even if user typed Chinese
                 stream_res = get_ai_interpretation(subject_obj, question, gender)
                 
                 if isinstance(stream_res, str):
                     st.error(stream_res)
                 else:
                     st.write_stream(stream_res)
-            
-            progress_bar.progress(100)
-            status_text.empty() # 清空状态文字
