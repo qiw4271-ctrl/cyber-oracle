@@ -3,9 +3,11 @@ import os
 import time
 from kerykeion import AstrologicalSubject, KerykeionChartSVG
 from openai import OpenAI
-from streamlit_extras.stylable_container import stylable_container
+from geopy.geocoders import Nominatim
+from timezonefinder import TimezoneFinder
+from datetime import datetime
 
-# --- 1. 页面配置与专业级赛博 CSS ---
+# --- 1. 页面配置 ---
 st.set_page_config(
     page_title="VOID PROPHET | Cyber Oracle",
     page_icon="🔮",
@@ -13,36 +15,27 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 注入 CSS：高科技黑客风 (High-Tech Noir)
+# --- 2. 赛博风格 CSS (保持不变) ---
 st.markdown("""
 <style>
-    /* 引入谷歌字体：Orbitron (科幻标题) 和 Roboto Mono (代码正文) */
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto+Mono:wght@300;400&display=swap');
-
-    /* 全局背景：深邃的矩阵黑 */
     .stApp {
         background-color: #050505;
         background-image: radial-gradient(circle at 50% 50%, #111 0%, #000 100%);
         color: #e0e0e0;
         font-family: 'Roboto Mono', monospace;
     }
-
-    /* 标题特效 */
     h1, h2, h3 {
         font-family: 'Orbitron', sans-serif;
-        color: #00ff41; /* 矩阵绿 */
+        color: #00ff41;
         text-transform: uppercase;
         letter-spacing: 3px;
         text-shadow: 0 0 10px rgba(0, 255, 65, 0.6);
     }
-    
-    /* 侧边栏美化 */
     [data-testid="stSidebar"] {
         background-color: #0a0a0a;
         border-right: 1px solid #1f2937;
     }
-    
-    /* 输入框：半透明磨砂玻璃感 */
     .stTextInput>div>div>input, .stNumberInput>div>div>input, .stTextArea>div>div>textarea {
         background-color: rgba(20, 20, 20, 0.8);
         color: #00ff41;
@@ -50,8 +43,6 @@ st.markdown("""
         border-radius: 4px;
         font-family: 'Roboto Mono', monospace;
     }
-    
-    /* 按钮：实心发光按钮 */
     .stButton>button {
         width: 100%;
         background: linear-gradient(90deg, #004d1a, #00802b);
@@ -69,53 +60,152 @@ st.markdown("""
         box-shadow: 0 0 20px rgba(0, 255, 65, 0.8);
         transform: scale(1.02);
     }
-    
-    /* 进度条 */
-    .stProgress > div > div > div > div {
-        background-color: #00ff41;
-        box-shadow: 0 0 10px #00ff41;
-    }
-    
-    /* 链接样式 */
-    a { color: #ff00ff !important; text-decoration: none; transition: 0.3s; }
-    a:hover { text-shadow: 0 0 8px #ff00ff; }
+    a { color: #ff00ff !important; text-decoration: none; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. 初始化 API ---
+# --- 3. 初始化 API ---
 try:
     client = OpenAI(
         api_key=st.secrets["OPENAI_API_KEY"],
         base_url=st.secrets.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
     )
 except Exception:
-    st.error("⚠️ SYSTEM ALERT: API Credentials Missing. Check Streamlit Secrets.")
+    st.error("⚠️ SYSTEM ALERT: API Credentials Missing.")
     st.stop()
 
-# --- 3. 核心功能 (已修复 Bug) ---
+# --- 4. 核心功能：精准定位与排盘 ---
 
-def get_cyber_interpretation(user_data, question):
-    """赛博风格 AI 解读"""
+def get_geo_data(city_name):
+    """
+    获取城市的经纬度和时区。
+    优先使用内置字典（速度快、无网也能用），
+    其次使用 Nominatim 在线查询。
+    """
+    # 1. 常用城市快速字典 (覆盖中国主要城市，防止API超时)
+    quick_lookup = {
+        "beijing": (39.9042, 116.4074, "Asia/Shanghai"),
+        "北京": (39.9042, 116.4074, "Asia/Shanghai"),
+        "shanghai": (31.2304, 121.4737, "Asia/Shanghai"),
+        "上海": (31.2304, 121.4737, "Asia/Shanghai"),
+        "guangzhou": (23.1291, 113.2644, "Asia/Shanghai"),
+        "shenzhen": (22.5431, 114.0579, "Asia/Shanghai"),
+        "chengdu": (30.5728, 104.0668, "Asia/Shanghai"),
+        "hong kong": (22.3193, 114.1694, "Asia/Hong_Kong"),
+        "new york": (40.7128, -74.0060, "America/New_York"),
+        "london": (51.5074, -0.1278, "Europe/London"),
+        "tokyo": (35.6762, 139.6503, "Asia/Tokyo"),
+    }
+    
+    city_lower = city_name.lower().strip()
+    if city_lower in quick_lookup:
+        return quick_lookup[city_lower]
+    
+    # 2. 在线查询 (兜底方案)
+    try:
+        geolocator = Nominatim(user_agent="cyber_oracle_app_v4")
+        location = geolocator.geocode(city_name)
+        if location:
+            tf = TimezoneFinder()
+            tz_str = tf.timezone_at(lng=location.longitude, lat=location.latitude)
+            return location.latitude, location.longitude, tz_str
+    except Exception as e:
+        print(f"Geo Error: {e}")
+        return None
+
+    return None
+
+def generate_chart_svg(name, year, month, day, hour, minute, city):
+    """V4.0 核心排盘逻辑：强制精准模式"""
+    
+    # 1. 获取精准坐标
+    geo_data = get_geo_data(city)
+    
+    if not geo_data:
+        return None, None, f"LOCATION ERROR: Could not calculate coordinates for '{city}'. Please try a major city name (e.g. 'Beijing')."
+    
+    lat, lng, tz_str = geo_data
+    
+    try:
+        # 2. 强制类型转换，确保安全
+        year, month, day = int(year), int(month), int(day)
+        hour, minute = int(hour), int(minute)
+        
+        # 3. 创建星盘对象 (显式传入 lat, lng, tz_str，绕过 kerykeion 自带的查询)
+        # 注意：这里我们使用 lat/lng 模式，这是最稳的
+        subject = AstrologicalSubject(
+            name, 
+            year, month, day, hour, minute, 
+            city=city, 
+            lat=lat, 
+            lng=lng, 
+            tz_str=tz_str,
+            online=False # 禁止它自己去联网查，只用我们给的数据
+        )
+        
+        # 4. 生成 SVG
+        chart = KerykeionChartSVG(subject, theme="dark")
+        chart.makeSVG()
+        
+        # 5. 读取 SVG
+        svg_file = f"{subject.name}_Chart.svg"
+        if os.path.exists(svg_file):
+            with open(svg_file, "r", encoding="utf-8") as f:
+                svg_content = f.read()
+            return svg_content, subject, None
+        else:
+            return None, None, "RENDER ERROR: SVG file creation failed."
+            
+    except Exception as e:
+        return None, None, f"CALCULATION ERROR: {str(e)}"
+
+def get_cyber_interpretation(subject_info, question):
+    """赛博 AI 解读"""
+    
+    # 构建精准的占星数据 Prompt
+    # 提取行星数据
+    planets = subject_info.planets_list # 获取所有行星列表
+    sun_sign = subject_info.sun['sign']
+    moon_sign = subject_info.moon['sign']
+    asc_sign = subject_info.first_house['sign'] # 上升星座
+    
+    chart_data_str = f"""
+    [Natal Data Verified]
+    Sun: {sun_sign}
+    Moon: {moon_sign}
+    Ascendant (Rising): {asc_sign}
+    Mercury: {subject_info.mercury['sign']}
+    Venus: {subject_info.venus['sign']}
+    Mars: {subject_info.mars['sign']}
+    Jupiter: {subject_info.jupiter['sign']}
+    Saturn: {subject_info.saturn['sign']}
+    """
+
     system_prompt = """
     Role: You are "Void Prophet" (Cyber Oracle) from 2077.
-    Task: Interpret the user's natal chart and question.
+    Task: Interpret the user's verified natal chart and question.
+    
+    IMPORTANT: You must base your analysis STRICTLY on the provided [Natal Data Verified]. 
+    DO NOT hallucinate or guess planetary positions.
+    
     Style:
-    - Tone: Cold, mysterious, tech-savvy (Cyberpunk).
-    - Metaphors: Use tech terms for astrology (e.g., Saturn -> Firewall, Retrograde -> Glitch).
-    - Structure:
-      [SIGNAL DETECTED]: Brief greeting.
-      [SYSTEM SCAN]: Analysis of Sun/Moon/Rising.
-      [CALCULATION]: Answer the question.
-      [PROTOCOL]: One actionable advice.
-    Language: English. Keep it concise (under 200 words).
+    - Tone: Cold, mysterious, tech-noir.
+    - Metaphors: Astrology terms -> Cyberpunk concepts (e.g., Saturn = Firewall, Moon = Core Drive).
+    
+    Structure:
+    1. [SIGNAL DETECTED]: Brief greeting using the city and date.
+    2. [CORE DUMP]: Analyze Sun (Core), Moon (OS), Ascendant (Interface). 
+       *Must use the verified signs provided.*
+    3. [PREDICTION ALGORITHM]: Answer the user's specific question based on the chart.
+    4. [ACTION PROTOCOL]: One specific, actionable advice.
     """
     
     try:
         stream = client.chat.completions.create(
-            model="gpt-3.5-turbo", # 可根据你的API支持情况修改，如 gpt-4o-mini
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"User Data: {user_data}\nQuestion: {question}"}
+                {"role": "user", "content": f"{chart_data_str}\n\nUser Question: {question}"}
             ],
             stream=True
         )
@@ -123,66 +213,27 @@ def get_cyber_interpretation(user_data, question):
     except Exception as e:
         return f"Error: Uplink failed. {e}"
 
-def generate_chart_svg(name, year, month, day, hour, minute, city, country):
-    """生成 SVG 星盘 (带防崩溃机制)"""
-    try:
-        # 1. 强制转为整数，防止手机端输入产生小数导致报错
-        year, month, day = int(year), int(month), int(day)
-        hour, minute = int(hour), int(minute)
-        
-        # 2. 使用临时文件名，避免因用户名字含特殊字符导致文件名乱码找不到
-        temp_name = "Subject_01"
-        
-        # 3. 生成星盘对象
-        # 注意：Kerykeion 需要正确的国家代码 (如 CN, US, GB) 才能更准地找到城市
-        subject = AstrologicalSubject(temp_name, year, month, day, hour, minute, city=city, nation=country)
-        chart = KerykeionChartSVG(subject, theme="dark")
-        chart.makeSVG()
-        
-        # 4. 读取生成的文件
-        svg_file = f"{temp_name}_Chart.svg"
-        
-        if os.path.exists(svg_file):
-            with open(svg_file, "r", encoding="utf-8") as f:
-                svg_content = f.read()
-            # 成功！返回内容
-            return svg_content, subject
-        else:
-            # 失败：文件未生成 (可能是城市经纬度没查到)
-            return None, "Chart generation skipped (Location data not found)."
-            
-    except Exception as e:
-        # 捕获所有错误，返回 None 和错误信息，防止程序崩溃
-        return None, f"Chart Error: {str(e)}"
+# --- 5. 界面布局 ---
 
-# --- 4. 界面布局 ---
-
-# 侧边栏
 with st.sidebar:
     st.title("💾 ACCESS_PORT")
     st.markdown("---")
-    
-    # 名字
     name = st.text_input("IDENTITY (Name)", "Neo")
     
-    # 日期时间
     col1, col2, col3 = st.columns([1.2, 1, 1])
-    with col1: year = st.number_input("Year", 1950, 2030, 1995, step=1)
-    with col2: month = st.number_input("Mon", 1, 12, 1, step=1)
-    with col3: day = st.number_input("Day", 1, 31, 1, step=1)
+    with col1: year = st.number_input("Year", 1950, 2030, 1989, step=1)
+    with col2: month = st.number_input("Mon", 1, 12, 11, step=1)
+    with col3: day = st.number_input("Day", 1, 31, 11, step=1)
     
     col4, col5 = st.columns(2)
-    with col4: hour = st.number_input("Hour", 0, 23, 12, step=1)
-    with col5: minute = st.number_input("Min", 0, 59, 0, step=1)
+    with col4: hour = st.number_input("Hour", 0, 23, 11, step=1)
+    with col5: minute = st.number_input("Min", 0, 59, 57, step=1)
     
-    # 地点
-    city = st.text_input("CITY (e.g. Beijing, New York)", "Beijing")
-    country = st.text_input("COUNTRY CODE (e.g. CN, US, GB)", "CN")
+    city = st.text_input("CITY (Auto-Detect)", "Beijing")
     
     st.markdown("---")
     question = st.text_area("QUERY (Your Question)", "Will I achieve financial freedom?")
     
-    # 打赏按钮
     st.markdown("### 🔋 ENERGY_CELL")
     st.markdown(
         """
@@ -197,69 +248,56 @@ with st.sidebar:
         unsafe_allow_html=True
     )
 
-# 主界面
 st.title("🔮 VOID PROPHET")
-st.caption("Quantum Astrology System v2077.2 // Online")
+st.caption("Quantum Astrology System v2077.4 (Precision Core) // Online")
 
-# 启动按钮
 if st.button(">> INITIALIZE SEQUENCE <<"):
     if not city:
         st.warning("⚠️ ALERT: Location data missing.")
     else:
-        # 进度条
         bar = st.progress(0)
         status = st.empty()
         
-        # 第一步：计算星盘
-        status.markdown("`Connecting to Satellite...`")
-        bar.progress(30)
-        time.sleep(0.5)
+        # 1. 计算
+        status.markdown("`Triangulating Coordinates...`")
+        bar.progress(20)
         
-        status.markdown("`Rendering Natal Matrix...`")
-        # 调用修复后的函数
-        svg_content, result_info = generate_chart_svg(name, year, month, day, hour, minute, city, country)
+        svg_content, subject_obj, error_msg = generate_chart_svg(name, year, month, day, hour, minute, city)
         
-        bar.progress(60)
-        
-        # 显示星盘或错误信息
-        chart_data_for_ai = ""
-        if svg_content:
-            st.image(svg_content, caption=f"NATAL MATRIX: {name.upper()}", use_column_width=True)
-            # 提取简单信息给 AI
-            chart_data_for_ai = f"Sun: {result_info.sun['sign']}, Moon: {result_info.moon['sign']}, Asc: {result_info.first_house['sign']}"
+        if error_msg:
+            # 如果出错，直接停止！不给 AI 瞎编的机会
+            bar.progress(0)
+            status.error("❌ FATAL ERROR: " + error_msg)
+            st.error("System halted. Please verify your city name (Try standard English spelling).")
         else:
-            # 如果出错了 (result_info 是错误信息字符串)
-            st.warning(f"⚠️ GRAPHIC RENDER FAIL: {result_info}")
-            st.caption("Switching to text-only mode...")
-            chart_data_for_ai = f"Birth: {year}-{month}-{day}, {city}"
+            # 2. 显示星盘
+            bar.progress(50)
+            status.markdown("`Rendering Natal Matrix...`")
+            if svg_content:
+                st.image(svg_content, caption=f"NATAL MATRIX: {name.upper()}", use_column_width=True)
             
-        # 第二步：AI 解读
-        status.markdown("`Downloading Prophecy...`")
-        bar.progress(80)
-        
-        st.markdown("---")
-        st.subheader("📟 ORACLE TRANSMISSION")
-        
-        # 结果容器
-        res_box = st.empty()
-        full_text = ""
-        
-        # 获取流式回复
-        ai_response = get_cyber_interpretation(chart_data_for_ai, question)
-        
-        # 如果 AI 报错
-        if isinstance(ai_response, str): 
-            res_box.error(ai_response)
-        else:
-            # 正常打字机效果
-            for chunk in ai_response:
-                content = chunk.choices[0].delta.content
-                if content:
-                    full_text += content
-                    res_box.markdown(full_text + " ▌")
-            res_box.markdown(full_text)
+            # 3. AI 解读 (只使用验证过的数据)
+            bar.progress(75)
+            status.markdown("`Establishing Quantum Link...`")
             
-        bar.progress(100)
-        status.empty() # 清除状态文字
-        
-        st.success("✅ TRANSMISSION COMPLETE")
+            st.markdown("---")
+            st.subheader("📟 ORACLE TRANSMISSION")
+            res_box = st.empty()
+            full_text = ""
+            
+            # 传入 subject_obj 对象，包含了真实的行星位置
+            ai_stream = get_cyber_interpretation(subject_obj, question)
+            
+            if isinstance(ai_stream, str):
+                res_box.error(ai_stream)
+            else:
+                for chunk in ai_stream:
+                    content = chunk.choices[0].delta.content
+                    if content:
+                        full_text += content
+                        res_box.markdown(full_text + " ▌")
+                res_box.markdown(full_text)
+                
+            bar.progress(100)
+            status.empty()
+            st.success("✅ TRANSMISSION COMPLETE")
