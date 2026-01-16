@@ -69,7 +69,8 @@ st.markdown("""
         transform: scale(1.02);
     }
     
-    .chart-container {
+    /* 图片容器样式 */
+    .stImage {
         display: flex;
         justify-content: center;
         background: rgba(0, 0, 0, 0.3);
@@ -128,7 +129,7 @@ def get_geo_data(city_name):
     return None
 
 def generate_chart_svg(name, year, month, day, hour, minute, city):
-    """V4.5 暴力搜寻版：解决文件找不到的问题"""
+    """V4.6 图片直出版：解决白屏乱码问题"""
     
     geo_data = get_geo_data(city)
     if not geo_data:
@@ -140,12 +141,8 @@ def generate_chart_svg(name, year, month, day, hour, minute, city):
         year, month, day = int(year), int(month), int(day)
         hour, minute = int(hour), int(minute)
         
-        # 使用不带特殊字符的纯ID，并转为小写，减少混淆
         unique_id = uuid.uuid4().hex[:8].lower()
         clean_name = name.strip().replace(" ", "_")
-        
-        # 构造名字，这里去掉 .title() 以防大小写不可控
-        # 我们用 unique_id 作为信标来寻找文件
         full_name_for_lib = f"{clean_name}_{unique_id}"
         
         subject = AstrologicalSubject(
@@ -157,36 +154,22 @@ def generate_chart_svg(name, year, month, day, hour, minute, city):
         )
         
         # 生成 SVG
-        # 使用 new_output_directory 修复参数报错
         chart = KerykeionChartSVG(subject, theme="dark", new_output_directory=".")
         chart.makeSVG() 
         
-        # --- 暴力搜寻逻辑 ---
-        # 不再猜测文件名，而是直接扫描目录下所有 .svg 文件
-        # 只要文件名里包含我们的 unique_id，就是它！
+        # 暴力搜寻文件
         found_filename = None
         all_files = os.listdir(".")
         
         for f in all_files:
-            # 忽略大小写进行匹配 (lower())
             if f.endswith(".svg") and unique_id in f.lower():
                 found_filename = f
                 break
         
         if found_filename and os.path.exists(found_filename):
-            with open(found_filename, "r", encoding="utf-8") as f:
-                svg_content = f.read()
-            
-            # 清理文件
-            try:
-                os.remove(found_filename)
-            except:
-                pass # 如果删不掉就算了，不影响运行
-                
-            subject.name = name # 恢复显示用的名字
-            return svg_content, subject, None
+            # 这一次我们直接返回文件名，交给 st.image 处理，不读成文本了
+            return found_filename, subject, None
         else:
-            # 如果还是找不到，打印出目录下所有文件，方便我们在报错信息里看到
             debug_info = ", ".join([f for f in all_files if f.endswith('.svg')])
             return None, None, f"RENDER ERROR: SVG created but not found. ID: {unique_id}. Files in dir: {debug_info}"
             
@@ -217,12 +200,9 @@ def get_cyber_interpretation(subject_info, question):
     Role: You are "Void Prophet" (Cyber Oracle) from 2077.
     Task: Interpret the user's verified natal chart and question.
     
-    IMPORTANT: You must base your analysis STRICTLY on the provided [Natal Data Verified]. 
-    DO NOT hallucinate planetary positions.
-    
     Style:
     - Tone: Cold, mysterious, tech-noir.
-    - Metaphors: Astrology terms -> Cyberpunk concepts (e.g., Saturn = Firewall, Moon = Core Drive).
+    - Metaphors: Astrology terms -> Cyberpunk concepts (e.g., Saturn = Firewall).
     
     Structure:
     1. [SIGNAL DETECTED]: Brief greeting.
@@ -277,7 +257,7 @@ with st.sidebar:
     )
 
 st.title("🔮 VOID PROPHET")
-st.caption("Quantum Astrology System v2077.5 (Hunter-Killer Edition) // Online")
+st.caption("Quantum Astrology System v2077.6 (Visual Fix) // Online")
 
 if st.button(">> INITIALIZE SEQUENCE <<"):
     if not city:
@@ -290,20 +270,27 @@ if st.button(">> INITIALIZE SEQUENCE <<"):
         status.markdown("`Triangulating Coordinates...`")
         bar.progress(20)
         
-        svg_content, subject_obj, error_msg = generate_chart_svg(name, year, month, day, hour, minute, city)
+        # 注意：这里返回的是文件名了，不是文件内容
+        img_filename, subject_obj, error_msg = generate_chart_svg(name, year, month, day, hour, minute, city)
         
         if error_msg:
             bar.progress(0)
             status.error("❌ FATAL ERROR: " + error_msg)
-            # 如果出错，给用户一个更具体的提示
-            st.error("System halted. Please try a different City name or check logs.")
+            st.error("System halted. Please check logs.")
         else:
             # 2. 显示星盘
             bar.progress(50)
             status.markdown("`Rendering Natal Matrix...`")
             
-            if svg_content:
-                st.markdown(f'<div class="chart-container">{svg_content}</div>', unsafe_allow_html=True)
+            # 【重要修改】使用 st.image 直接显示图片，不再使用 markdown
+            if img_filename:
+                # 读取图片数据
+                try:
+                    st.image(img_filename, caption="Natal Matrix Generated", use_container_width=True)
+                    # 显示完可以尝试删除，或者下次运行时覆盖
+                    # os.remove(img_filename) # 暂时注释掉，防止删除太快显示不出来
+                except Exception as e:
+                    st.error(f"Image Render Error: {e}")
             
             # 3. AI 解读
             bar.progress(75)
