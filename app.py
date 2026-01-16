@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import time
+import uuid  # 新增：用于生成唯一文件名，防止冲突
 from kerykeion import AstrologicalSubject, KerykeionChartSVG
 from openai import OpenAI
 from geopy.geocoders import Nominatim
@@ -15,7 +16,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 2. 赛博风格 CSS (保持不变) ---
+# --- 2. 赛博风格 CSS ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto+Mono:wght@300;400&display=swap');
@@ -60,6 +61,17 @@ st.markdown("""
         box-shadow: 0 0 20px rgba(0, 255, 65, 0.8);
         transform: scale(1.02);
     }
+    /* 优化 SVG 显示容器 */
+    .chart-container {
+        display: flex;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid #333;
+        border-radius: 10px;
+        padding: 20px;
+        margin-top: 20px;
+        box-shadow: 0 0 15px rgba(0, 255, 65, 0.1);
+    }
     a { color: #ff00ff !important; text-decoration: none; }
 </style>
 """, unsafe_allow_html=True)
@@ -77,12 +89,8 @@ except Exception:
 # --- 4. 核心功能：精准定位与排盘 ---
 
 def get_geo_data(city_name):
-    """
-    获取城市的经纬度和时区。
-    优先使用内置字典（速度快、无网也能用），
-    其次使用 Nominatim 在线查询。
-    """
-    # 1. 常用城市快速字典 (覆盖中国主要城市，防止API超时)
+    """获取城市的经纬度和时区"""
+    # 1. 常用城市快速字典
     quick_lookup = {
         "beijing": (39.9042, 116.4074, "Asia/Shanghai"),
         "北京": (39.9042, 116.4074, "Asia/Shanghai"),
@@ -101,7 +109,7 @@ def get_geo_data(city_name):
     if city_lower in quick_lookup:
         return quick_lookup[city_lower]
     
-    # 2. 在线查询 (兜底方案)
+    # 2. 在线查询
     try:
         geolocator = Nominatim(user_agent="cyber_oracle_app_v4")
         location = geolocator.geocode(city_name)
@@ -116,45 +124,53 @@ def get_geo_data(city_name):
     return None
 
 def generate_chart_svg(name, year, month, day, hour, minute, city):
-    """V4.0 核心排盘逻辑：强制精准模式"""
+    """V4.1 核心排盘逻辑：并发安全 + 自动清理"""
     
-    # 1. 获取精准坐标
+    # 1. 获取坐标
     geo_data = get_geo_data(city)
-    
     if not geo_data:
-        return None, None, f"LOCATION ERROR: Could not calculate coordinates for '{city}'. Please try a major city name (e.g. 'Beijing')."
+        return None, None, f"LOCATION ERROR: Could not find '{city}'. Try a major city name."
     
     lat, lng, tz_str = geo_data
     
     try:
-        # 2. 强制类型转换，确保安全
         year, month, day = int(year), int(month), int(day)
         hour, minute = int(hour), int(minute)
         
-        # 3. 创建星盘对象 (显式传入 lat, lng, tz_str，绕过 kerykeion 自带的查询)
-        # 注意：这里我们使用 lat/lng 模式，这是最稳的
+        # 2. 生成唯一的随机ID，防止文件冲突
+        # 用户虽然输入 "Neo"，但系统内部生成文件叫 "Neo_a1b2c3..."
+        unique_id = uuid.uuid4().hex[:8]
+        safe_filename_base = f"{name}_{unique_id}".replace(" ", "_")
+
+        # 3. 创建星盘对象
         subject = AstrologicalSubject(
-            name, 
+            safe_filename_base, 
             year, month, day, hour, minute, 
             city=city, 
-            lat=lat, 
-            lng=lng, 
-            tz_str=tz_str,
-            online=False # 禁止它自己去联网查，只用我们给的数据
+            lat=lat, lng=lng, tz_str=tz_str,
+            online=False
         )
         
         # 4. 生成 SVG
         chart = KerykeionChartSVG(subject, theme="dark")
         chart.makeSVG()
         
-        # 5. 读取 SVG
-        svg_file = f"{subject.name}_Chart.svg"
-        if os.path.exists(svg_file):
-            with open(svg_file, "r", encoding="utf-8") as f:
+        # 5. 读取内容并删除临时文件
+        expected_filename = f"{safe_filename_base}_Chart.svg"
+        
+        if os.path.exists(expected_filename):
+            with open(expected_filename, "r", encoding="utf-8") as f:
                 svg_content = f.read()
+            
+            # 删除临时文件 (关键步骤！)
+            os.remove(expected_filename)
+            
+            # 将对象的名字改回用户输入的名字，以便后续 AI 称呼用户
+            subject.name = name
+            
             return svg_content, subject, None
         else:
-            return None, None, "RENDER ERROR: SVG file creation failed."
+            return None, None, "RENDER ERROR: SVG generation failed."
             
     except Exception as e:
         return None, None, f"CALCULATION ERROR: {str(e)}"
@@ -162,18 +178,15 @@ def generate_chart_svg(name, year, month, day, hour, minute, city):
 def get_cyber_interpretation(subject_info, question):
     """赛博 AI 解读"""
     
-    # 构建精准的占星数据 Prompt
-    # 提取行星数据
-    planets = subject_info.planets_list # 获取所有行星列表
     sun_sign = subject_info.sun['sign']
     moon_sign = subject_info.moon['sign']
-    asc_sign = subject_info.first_house['sign'] # 上升星座
+    asc_sign = subject_info.first_house['sign']
     
     chart_data_str = f"""
     [Natal Data Verified]
     Sun: {sun_sign}
     Moon: {moon_sign}
-    Ascendant (Rising): {asc_sign}
+    Ascendant: {asc_sign}
     Mercury: {subject_info.mercury['sign']}
     Venus: {subject_info.venus['sign']}
     Mars: {subject_info.mars['sign']}
@@ -186,17 +199,16 @@ def get_cyber_interpretation(subject_info, question):
     Task: Interpret the user's verified natal chart and question.
     
     IMPORTANT: You must base your analysis STRICTLY on the provided [Natal Data Verified]. 
-    DO NOT hallucinate or guess planetary positions.
+    DO NOT hallucinate planetary positions.
     
     Style:
     - Tone: Cold, mysterious, tech-noir.
     - Metaphors: Astrology terms -> Cyberpunk concepts (e.g., Saturn = Firewall, Moon = Core Drive).
     
     Structure:
-    1. [SIGNAL DETECTED]: Brief greeting using the city and date.
-    2. [CORE DUMP]: Analyze Sun (Core), Moon (OS), Ascendant (Interface). 
-       *Must use the verified signs provided.*
-    3. [PREDICTION ALGORITHM]: Answer the user's specific question based on the chart.
+    1. [SIGNAL DETECTED]: Brief greeting.
+    2. [CORE DUMP]: Analyze Sun, Moon, Ascendant using the verified signs.
+    3. [PREDICTION ALGORITHM]: Answer the user's specific question.
     4. [ACTION PROTOCOL]: One specific, actionable advice.
     """
     
@@ -237,13 +249,11 @@ with st.sidebar:
     st.markdown("### 🔋 ENERGY_CELL")
     st.markdown(
         """
-        <a href="https://ko-fi.com/你的用户名" target="_blank">
-            <button style="
-                background: #ff00ff; border: none; color: white; width: 100%; padding: 10px; font-weight: bold; cursor: pointer;
-            ">
-            ⚡ INJECT CREDITS (DONATE)
-            </button>
-        </a>
+        <button style="
+            background: #ff00ff; border: none; color: white; width: 100%; padding: 10px; font-weight: bold; cursor: pointer;
+        ">
+        ⚡ INJECT CREDITS (DONATE)
+        </button>
         """, 
         unsafe_allow_html=True
     )
@@ -265,18 +275,19 @@ if st.button(">> INITIALIZE SEQUENCE <<"):
         svg_content, subject_obj, error_msg = generate_chart_svg(name, year, month, day, hour, minute, city)
         
         if error_msg:
-            # 如果出错，直接停止！不给 AI 瞎编的机会
             bar.progress(0)
             status.error("❌ FATAL ERROR: " + error_msg)
-            st.error("System halted. Please verify your city name (Try standard English spelling).")
+            st.error("System halted. Please check city spelling.")
         else:
             # 2. 显示星盘
             bar.progress(50)
             status.markdown("`Rendering Natal Matrix...`")
-            if svg_content:
-                st.image(svg_content, caption=f"NATAL MATRIX: {name.upper()}", use_column_width=True)
             
-            # 3. AI 解读 (只使用验证过的数据)
+            if svg_content:
+                # 使用 HTML div 容器直接渲染 SVG，比 st.image 更清晰且支持透明背景
+                st.markdown(f'<div class="chart-container">{svg_content}</div>', unsafe_allow_html=True)
+            
+            # 3. AI 解读
             bar.progress(75)
             status.markdown("`Establishing Quantum Link...`")
             
@@ -285,7 +296,6 @@ if st.button(">> INITIALIZE SEQUENCE <<"):
             res_box = st.empty()
             full_text = ""
             
-            # 传入 subject_obj 对象，包含了真实的行星位置
             ai_stream = get_cyber_interpretation(subject_obj, question)
             
             if isinstance(ai_stream, str):
