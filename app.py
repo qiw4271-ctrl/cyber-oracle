@@ -124,12 +124,12 @@ def get_geo_data(city_name):
     return None
 
 def generate_chart_svg(name, year, month, day, hour, minute, city):
-    """V4.1 核心排盘逻辑：并发安全 + 自动清理"""
+    """V4.2 修复版：解决找不到文件的问题"""
     
     # 1. 获取坐标
     geo_data = get_geo_data(city)
     if not geo_data:
-        return None, None, f"LOCATION ERROR: Could not find '{city}'. Try a major city name."
+        return None, None, f"LOCATION ERROR: Could not find '{city}'."
     
     lat, lng, tz_str = geo_data
     
@@ -137,10 +137,11 @@ def generate_chart_svg(name, year, month, day, hour, minute, city):
         year, month, day = int(year), int(month), int(day)
         hour, minute = int(hour), int(minute)
         
-        # 2. 生成唯一的随机ID，防止文件冲突
-        # 用户虽然输入 "Neo"，但系统内部生成文件叫 "Neo_a1b2c3..."
+        # 2. 生成唯一的随机ID
+        # 注意：为了防止 kerykeion 自动首字母大写导致的找不到文件问题，
+        # 我们这里直接全部用首字母大写 (Title Case)
         unique_id = uuid.uuid4().hex[:8]
-        safe_filename_base = f"{name}_{unique_id}".replace(" ", "_")
+        safe_filename_base = f"{name}_{unique_id}".replace(" ", "_").title()
 
         # 3. 创建星盘对象
         subject = AstrologicalSubject(
@@ -151,28 +152,41 @@ def generate_chart_svg(name, year, month, day, hour, minute, city):
             online=False
         )
         
-        # 4. 生成 SVG
+        # 4. 生成 SVG (强制指定输出目录为当前目录)
         chart = KerykeionChartSVG(subject, theme="dark")
-        chart.makeSVG()
+        # 关键修复：显式指定 output_directory="."
+        chart.makeSVG(output_directory=".")
         
-        # 5. 读取内容并删除临时文件
+        # 5. 寻找文件
+        # Kerykeion 生成的文件名格式通常是 "Name_Chart.svg"
         expected_filename = f"{safe_filename_base}_Chart.svg"
         
+        # 调试逻辑：如果找不到，尝试在当前目录模糊搜索
+        if not os.path.exists(expected_filename):
+            print(f"⚠️ 预期文件 {expected_filename} 未找到，正在搜索目录...")
+            files = os.listdir(".")
+            print(f"当前目录文件列表: {files}") # 这行会显示在 Streamlit 右下角的 Manage App -> Logs 里
+            
+            # 尝试找到包含 unique_id 的 SVG 文件
+            for f in files:
+                if unique_id in f and f.endswith(".svg"):
+                    expected_filename = f
+                    break
+        
+        # 6. 读取并清理
         if os.path.exists(expected_filename):
             with open(expected_filename, "r", encoding="utf-8") as f:
                 svg_content = f.read()
             
-            # 删除临时文件 (关键步骤！)
-            os.remove(expected_filename)
-            
-            # 将对象的名字改回用户输入的名字，以便后续 AI 称呼用户
-            subject.name = name
-            
+            os.remove(expected_filename) # 删除临时文件
+            subject.name = name # 恢复名字
             return svg_content, subject, None
         else:
-            return None, None, "RENDER ERROR: SVG generation failed."
+            return None, None, "RENDER ERROR: SVG generation failed. check logs."
             
     except Exception as e:
+        import traceback
+        traceback.print_exc() # 打印详细报错到后台
         return None, None, f"CALCULATION ERROR: {str(e)}"
 
 def get_cyber_interpretation(subject_info, question):
@@ -311,3 +325,4 @@ if st.button(">> INITIALIZE SEQUENCE <<"):
             bar.progress(100)
             status.empty()
             st.success("✅ TRANSMISSION COMPLETE")
+
