@@ -20,12 +20,14 @@ st.set_page_config(
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto+Mono:wght@300;400&display=swap');
+    
     .stApp {
         background-color: #050505;
         background-image: radial-gradient(circle at 50% 50%, #111 0%, #000 100%);
         color: #e0e0e0;
         font-family: 'Roboto Mono', monospace;
     }
+    
     h1, h2, h3 {
         font-family: 'Orbitron', sans-serif;
         color: #00ff41;
@@ -33,10 +35,12 @@ st.markdown("""
         letter-spacing: 3px;
         text-shadow: 0 0 10px rgba(0, 255, 65, 0.6);
     }
+    
     [data-testid="stSidebar"] {
         background-color: #0a0a0a;
         border-right: 1px solid #1f2937;
     }
+    
     .stTextInput>div>div>input, .stNumberInput>div>div>input, .stTextArea>div>div>textarea {
         background-color: rgba(20, 20, 20, 0.8);
         color: #00ff41;
@@ -44,6 +48,7 @@ st.markdown("""
         border-radius: 4px;
         font-family: 'Roboto Mono', monospace;
     }
+    
     .stButton>button {
         width: 100%;
         background: linear-gradient(90deg, #004d1a, #00802b);
@@ -55,12 +60,14 @@ st.markdown("""
         transition: all 0.3s ease;
         text-transform: uppercase;
     }
+    
     .stButton>button:hover {
         background: #00ff41;
         color: black;
         box-shadow: 0 0 20px rgba(0, 255, 65, 0.8);
         transform: scale(1.02);
     }
+    
     /* 优化 SVG 显示容器 */
     .chart-container {
         display: flex;
@@ -72,6 +79,7 @@ st.markdown("""
         margin-top: 20px;
         box-shadow: 0 0 15px rgba(0, 255, 65, 0.1);
     }
+    
     a { color: #ff00ff !important; text-decoration: none; }
 </style>
 """, unsafe_allow_html=True)
@@ -83,11 +91,10 @@ try:
         base_url=st.secrets.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
     )
 except Exception:
-    st.error("⚠️ SYSTEM ALERT: API Credentials Missing.")
+    st.error("⚠️ SYSTEM ALERT: API Credentials Missing. Please check your .streamlit/secrets.toml file.")
     st.stop()
 
 # --- 4. 核心功能：精准定位与排盘 ---
-
 def get_geo_data(city_name):
     """获取城市的经纬度和时区"""
     # 1. 常用城市快速字典
@@ -120,11 +127,10 @@ def get_geo_data(city_name):
     except Exception as e:
         print(f"Geo Error: {e}")
         return None
-
     return None
 
 def generate_chart_svg(name, year, month, day, hour, minute, city):
-    """V4.3 最终修复版：修正参数位置"""
+    """V4.4 修复版：适配新版 kerykeion 参数"""
     
     # 1. 获取坐标
     geo_data = get_geo_data(city)
@@ -141,7 +147,7 @@ def generate_chart_svg(name, year, month, day, hour, minute, city):
         unique_id = uuid.uuid4().hex[:8]
         # 使用 Title Case (首字母大写)，因为 kerykeion 可能会强制转换大小写
         safe_filename_base = f"{name}_{unique_id}".replace(" ", "_").title()
-
+        
         # 3. 创建星盘对象
         subject = AstrologicalSubject(
             safe_filename_base, 
@@ -152,9 +158,9 @@ def generate_chart_svg(name, year, month, day, hour, minute, city):
         )
         
         # 4. 生成 SVG 
-        # 【修正点】output_directory 必须放在这里！
-        chart = KerykeionChartSVG(subject, theme="dark", output_directory=".")
-        chart.makeSVG() # 这里不需要参数了
+        # 【修正点】使用 new_output_directory 替代旧版参数
+        chart = KerykeionChartSVG(subject, theme="dark", new_output_directory=".")
+        chart.makeSVG() 
         
         # 5. 寻找文件
         # Kerykeion 生成的文件名通常是 "Name_Chart.svg"
@@ -162,8 +168,6 @@ def generate_chart_svg(name, year, month, day, hour, minute, city):
         
         # 调试逻辑：双重保险查找
         if not os.path.exists(expected_filename):
-            # 有时候库会忽略 output_directory，或者文件名有细微差别
-            # 我们遍历当前文件夹找刚生成的那个文件
             files = os.listdir(".")
             for f in files:
                 if unique_id in f and f.endswith(".svg"):
@@ -185,6 +189,7 @@ def generate_chart_svg(name, year, month, day, hour, minute, city):
         # 打印详细错误方便调试
         print(f"DEBUG ERROR: {e}") 
         return None, None, f"CALCULATION ERROR: {str(e)}"
+
 def get_cyber_interpretation(subject_info, question):
     """赛博 AI 解读"""
     
@@ -236,7 +241,6 @@ def get_cyber_interpretation(subject_info, question):
         return f"Error: Uplink failed. {e}"
 
 # --- 5. 界面布局 ---
-
 with st.sidebar:
     st.title("💾 ACCESS_PORT")
     st.markdown("---")
@@ -321,5 +325,3 @@ if st.button(">> INITIALIZE SEQUENCE <<"):
             bar.progress(100)
             status.empty()
             st.success("✅ TRANSMISSION COMPLETE")
-
-
