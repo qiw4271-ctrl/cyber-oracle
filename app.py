@@ -5,7 +5,7 @@ from kerykeion import AstrologicalSubject, KerykeionChartSVG
 from openai import OpenAI
 from streamlit_extras.stylable_container import stylable_container
 
-# --- 1. 配置页面与赛博风格 CSS ---
+# --- 1. 页面配置与专业级赛博 CSS ---
 st.set_page_config(
     page_title="VOID PROPHET | Cyber Oracle",
     page_icon="🔮",
@@ -13,230 +13,253 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 注入自定义 CSS (霓虹赛博风)
+# 注入 CSS：高科技黑客风 (High-Tech Noir)
 st.markdown("""
 <style>
-    /* 全局背景变黑 */
+    /* 引入谷歌字体：Orbitron (科幻标题) 和 Roboto Mono (代码正文) */
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto+Mono:wght@300;400&display=swap');
+
+    /* 全局背景：深邃的矩阵黑 */
     .stApp {
-        background-color: #0e1117;
-        color: #00ff41;
-        font-family: 'Courier New', Courier, monospace;
+        background-color: #050505;
+        background-image: radial-gradient(circle at 50% 50%, #111 0%, #000 100%);
+        color: #e0e0e0;
+        font-family: 'Roboto Mono', monospace;
     }
-    /* 侧边栏样式 */
+
+    /* 标题特效 */
+    h1, h2, h3 {
+        font-family: 'Orbitron', sans-serif;
+        color: #00ff41; /* 矩阵绿 */
+        text-transform: uppercase;
+        letter-spacing: 3px;
+        text-shadow: 0 0 10px rgba(0, 255, 65, 0.6);
+    }
+    
+    /* 侧边栏美化 */
     [data-testid="stSidebar"] {
-        background-color: #0b0d10;
-        border-right: 1px solid #333;
+        background-color: #0a0a0a;
+        border-right: 1px solid #1f2937;
     }
-    /* 按钮样式：霓虹边框 */
-    .stButton>button {
-        color: #00ff41;
-        background-color: transparent;
-        border: 1px solid #00ff41;
-        border-radius: 0px;
-        transition: all 0.3s ease;
-    }
-    .stButton>button:hover {
-        background-color: #00ff41;
-        color: #000;
-        box-shadow: 0 0 10px #00ff41;
-    }
-    /* 输入框样式 */
-    .stTextInput>div>div>input {
-        background-color: #1c1f26;
+    
+    /* 输入框：半透明磨砂玻璃感 */
+    .stTextInput>div>div>input, .stNumberInput>div>div>input, .stTextArea>div>div>textarea {
+        background-color: rgba(20, 20, 20, 0.8);
         color: #00ff41;
         border: 1px solid #333;
+        border-radius: 4px;
+        font-family: 'Roboto Mono', monospace;
     }
-    /* 标题特效 */
-    h1 {
-        text-shadow: 0 0 10px #00ff41, 0 0 20px #00ff41;
+    
+    /* 按钮：实心发光按钮 */
+    .stButton>button {
+        width: 100%;
+        background: linear-gradient(90deg, #004d1a, #00802b);
+        border: 1px solid #00ff41;
+        color: white;
+        padding: 10px 20px;
+        font-family: 'Orbitron', sans-serif;
+        font-weight: bold;
+        transition: all 0.3s ease;
+        text-transform: uppercase;
     }
-    /* 链接颜色 */
-    a { color: #ff00ff !important; text-decoration: none; }
+    .stButton>button:hover {
+        background: #00ff41;
+        color: black;
+        box-shadow: 0 0 20px rgba(0, 255, 65, 0.8);
+        transform: scale(1.02);
+    }
+    
+    /* 进度条 */
+    .stProgress > div > div > div > div {
+        background-color: #00ff41;
+        box-shadow: 0 0 10px #00ff41;
+    }
+    
+    /* 链接样式 */
+    a { color: #ff00ff !important; text-decoration: none; transition: 0.3s; }
+    a:hover { text-shadow: 0 0 8px #ff00ff; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. 初始化 API (从 Streamlit Secrets 获取) ---
-# 无论你是用 OpenAI 还是公益 API，这里都兼容
+# --- 2. 初始化 API ---
 try:
     client = OpenAI(
         api_key=st.secrets["OPENAI_API_KEY"],
         base_url=st.secrets.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
     )
 except Exception:
-    st.error("⚠️ SYSTEM ERROR: API Key missing. Please configure secrets.")
+    st.error("⚠️ SYSTEM ALERT: API Credentials Missing. Check Streamlit Secrets.")
     st.stop()
 
-# --- 3. 核心功能函数 ---
+# --- 3. 核心功能 (已修复 Bug) ---
 
 def get_cyber_interpretation(user_data, question):
-    """调用 AI 进行赛博风格解盘"""
+    """赛博风格 AI 解读"""
     system_prompt = """
-    You are the "Void Prophet" (Cyber Oracle) from the year 2077.
-    Analyze the user's natal chart data and their question.
-    
-    Style Guidelines:
-    1. Tone: Cold, philosophical, tech-noir, mysterious.
-    2. Terminology: Translate astrological terms into cyberpunk metaphors (e.g., "Saturn" -> "System Firewall", "Retrograde" -> "Data Glitch", "Ascendant" -> "Interface Persona").
-    3. Structure: 
-       - [SIGNAL RECEIVED]: Acknowledge the user.
-       - [CORE DUMP]: Analyze Sun/Moon/Rising briefly.
-       - [PREDICTION ALGORITHM]: Answer the specific question.
-       - [ACTION PROTOCOL]: One actionable advice.
-    
-    Output Language: English (for international users).
-    Keep it concise but impactful.
-    """
-    
-    user_prompt = f"""
-    Target Subject Data: {user_data}
-    Target Query: {question}
+    Role: You are "Void Prophet" (Cyber Oracle) from 2077.
+    Task: Interpret the user's natal chart and question.
+    Style:
+    - Tone: Cold, mysterious, tech-savvy (Cyberpunk).
+    - Metaphors: Use tech terms for astrology (e.g., Saturn -> Firewall, Retrograde -> Glitch).
+    - Structure:
+      [SIGNAL DETECTED]: Brief greeting.
+      [SYSTEM SCAN]: Analysis of Sun/Moon/Rising.
+      [CALCULATION]: Answer the question.
+      [PROTOCOL]: One actionable advice.
+    Language: English. Keep it concise (under 200 words).
     """
     
     try:
         stream = client.chat.completions.create(
-            model="gpt-3.5-turbo", # 或者你的公益API支持的模型
+            model="gpt-3.5-turbo", # 可根据你的API支持情况修改，如 gpt-4o-mini
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
+                {"role": "user", "content": f"User Data: {user_data}\nQuestion: {question}"}
             ],
             stream=True
         )
         return stream
     except Exception as e:
-        return f"Error: Connection to the Void lost. {e}"
+        return f"Error: Uplink failed. {e}"
 
-def generate_chart_svg(name, year, month, day, hour, minute, city, country="US"):
-    """生成专业 SVG 星盘"""
+def generate_chart_svg(name, year, month, day, hour, minute, city, country):
+    """生成 SVG 星盘 (带防崩溃机制)"""
     try:
-        # Kerykeion 不需要联网查经纬度，自带数据库，速度极快
-        subject = AstrologicalSubject(name, year, month, day, hour, minute, city=city, nation=country)
-        chart = KerykeionChartSVG(subject, theme="dark") # 黑色主题
-        # Kerykeion 生成的是 SVG 文件，我们读取它
+        # 1. 强制转为整数，防止手机端输入产生小数导致报错
+        year, month, day = int(year), int(month), int(day)
+        hour, minute = int(hour), int(minute)
+        
+        # 2. 使用临时文件名，避免因用户名字含特殊字符导致文件名乱码找不到
+        temp_name = "Subject_01"
+        
+        # 3. 生成星盘对象
+        # 注意：Kerykeion 需要正确的国家代码 (如 CN, US, GB) 才能更准地找到城市
+        subject = AstrologicalSubject(temp_name, year, month, day, hour, minute, city=city, nation=country)
+        chart = KerykeionChartSVG(subject, theme="dark")
         chart.makeSVG()
-        # 读取生成的 SVG 内容
-        # 注意：kerykeion 默认会在当前目录生成文件，我们读完需要清理或直接展示
-        # 这里为了演示简单，直接返回对象里的 svg 字符串如果库支持，或者读取文件
-        # 由于 kerykeion 的 makeSVG 会写文件，我们假设它写在临时目录
-        svg_filename = f"{subject.name}_Chart.svg"
-        if os.path.exists(svg_filename):
-            with open(svg_filename, "r") as f:
+        
+        # 4. 读取生成的文件
+        svg_file = f"{temp_name}_Chart.svg"
+        
+        if os.path.exists(svg_file):
+            with open(svg_file, "r", encoding="utf-8") as f:
                 svg_content = f.read()
-            # 稍微魔改一下 SVG 颜色以适应赛博风 (可选)
+            # 成功！返回内容
             return svg_content, subject
+        else:
+            # 失败：文件未生成 (可能是城市经纬度没查到)
+            return None, "Chart generation skipped (Location data not found)."
+            
     except Exception as e:
-        return None, f"Chart generation failed: {e}"
+        # 捕获所有错误，返回 None 和错误信息，防止程序崩溃
+        return None, f"Chart Error: {str(e)}"
 
 # --- 4. 界面布局 ---
 
-# 侧边栏：输入区
+# 侧边栏
 with st.sidebar:
-    st.title("💾 INPUT_DATA")
+    st.title("💾 ACCESS_PORT")
     st.markdown("---")
-    name = st.text_input("CODENAME (Name)", "Traveler")
     
-    col1, col2, col3 = st.columns(3)
-    with col1: year = st.number_input("YYYY", 1950, 2030, 2000)
-    with col2: month = st.number_input("MM", 1, 12, 1)
-    with col3: day = st.number_input("DD", 1, 31, 1)
+    # 名字
+    name = st.text_input("IDENTITY (Name)", "Neo")
+    
+    # 日期时间
+    col1, col2, col3 = st.columns([1.2, 1, 1])
+    with col1: year = st.number_input("Year", 1950, 2030, 1995, step=1)
+    with col2: month = st.number_input("Mon", 1, 12, 1, step=1)
+    with col3: day = st.number_input("Day", 1, 31, 1, step=1)
     
     col4, col5 = st.columns(2)
-    with col4: hour = st.number_input("HR (0-23)", 0, 23, 12)
-    with col5: minute = st.number_input("MIN", 0, 59, 0)
+    with col4: hour = st.number_input("Hour", 0, 23, 12, step=1)
+    with col5: minute = st.number_input("Min", 0, 59, 0, step=1)
     
-    city = st.text_input("LOCATION (City)", "London")
-    country = st.text_input("REGION (Country Code)", "GB")
+    # 地点
+    city = st.text_input("CITY (e.g. Beijing, New York)", "Beijing")
+    country = st.text_input("COUNTRY CODE (e.g. CN, US, GB)", "CN")
     
     st.markdown("---")
-    question = st.text_area("QUERY DATABASE (Your Question)", "What is my purpose?")
+    question = st.text_area("QUERY (Your Question)", "Will I achieve financial freedom?")
     
-    # 能量交换按钮 (Ko-fi)
+    # 打赏按钮
     st.markdown("### 🔋 ENERGY_CELL")
     st.markdown(
         """
         <a href="https://ko-fi.com/你的用户名" target="_blank">
             <button style="
-                width: 100%;
-                background-color: #ff00ff;
-                color: white;
-                border: none;
-                padding: 10px;
-                font-weight: bold;
-                cursor: pointer;
-                text-transform: uppercase;
+                background: #ff00ff; border: none; color: white; width: 100%; padding: 10px; font-weight: bold; cursor: pointer;
             ">
-            ⚡ Inject Credits (Donate)
+            ⚡ INJECT CREDITS (DONATE)
             </button>
         </a>
         """, 
         unsafe_allow_html=True
     )
 
-# 主窗口：显示区
+# 主界面
 st.title("🔮 VOID PROPHET")
-st.caption("Quantum Astrology System v2077.1 // Online")
+st.caption("Quantum Astrology System v2077.2 // Online")
 
+# 启动按钮
 if st.button(">> INITIALIZE SEQUENCE <<"):
-    if not city or not question:
-        st.warning("⚠️ DATA MISSING: Input required.")
+    if not city:
+        st.warning("⚠️ ALERT: Location data missing.")
     else:
-        # 1. 进度条特效
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        # 进度条
+        bar = st.progress(0)
+        status = st.empty()
         
-        status_text.text("Parsing spacetime coordinates...")
-        progress_bar.progress(25)
+        # 第一步：计算星盘
+        status.markdown("`Connecting to Satellite...`")
+        bar.progress(30)
         time.sleep(0.5)
         
-        # 2. 生成星盘
-        status_text.text("Rendering Natal Matrix...")
-        svg_content, subject_info = generate_chart_svg(name, year, month, day, hour, minute, city, country)
-        progress_bar.progress(60)
+        status.markdown("`Rendering Natal Matrix...`")
+        # 调用修复后的函数
+        svg_content, result_info = generate_chart_svg(name, year, month, day, hour, minute, city, country)
         
+        bar.progress(60)
+        
+        # 显示星盘或错误信息
+        chart_data_for_ai = ""
         if svg_content:
-            # 展示星盘 (SVG渲染)
-            st.image(svg_content, caption=f"NATAL MATRIX: {name}", use_column_width=True)
-            # 提取简要占星数据给 AI
-            astrology_data = f"""
-            Sun: {subject_info.sun['sign']}
-            Moon: {subject_info.moon['sign']}
-            Ascendant: {subject_info.first_house['sign']}
-            """
+            st.image(svg_content, caption=f"NATAL MATRIX: {name.upper()}", use_column_width=True)
+            # 提取简单信息给 AI
+            chart_data_for_ai = f"Sun: {result_info.sun['sign']}, Moon: {result_info.moon['sign']}, Asc: {result_info.first_house['sign']}"
         else:
-            st.error("Chart rendering failed. Continuing with text analysis.")
-            astrology_data = f"Date: {year}-{month}-{day}, City: {city}"
+            # 如果出错了 (result_info 是错误信息字符串)
+            st.warning(f"⚠️ GRAPHIC RENDER FAIL: {result_info}")
+            st.caption("Switching to text-only mode...")
+            chart_data_for_ai = f"Birth: {year}-{month}-{day}, {city}"
             
-        # 3. AI 解读
-        status_text.text("Establishing Quantum Link...")
-        progress_bar.progress(90)
+        # 第二步：AI 解读
+        status.markdown("`Downloading Prophecy...`")
+        bar.progress(80)
         
         st.markdown("---")
         st.subheader("📟 ORACLE TRANSMISSION")
         
-        # 流式输出框
-        response_container = st.empty()
-        full_response = ""
+        # 结果容器
+        res_box = st.empty()
+        full_text = ""
         
-        ai_stream = get_cyber_interpretation(astrology_data, question)
+        # 获取流式回复
+        ai_response = get_cyber_interpretation(chart_data_for_ai, question)
         
-        # 模拟打字机效果
-        for chunk in ai_stream:
-            content = chunk.choices[0].delta.content
-            if content:
-                full_response += content
-                response_container.markdown(full_response + " ▌") # 光标特效
+        # 如果 AI 报错
+        if isinstance(ai_response, str): 
+            res_box.error(ai_response)
+        else:
+            # 正常打字机效果
+            for chunk in ai_response:
+                content = chunk.choices[0].delta.content
+                if content:
+                    full_text += content
+                    res_box.markdown(full_text + " ▌")
+            res_box.markdown(full_text)
+            
+        bar.progress(100)
+        status.empty() # 清除状态文字
         
-        response_container.markdown(full_response) # 结束时移除光标
-        
-        progress_bar.progress(100)
-        status_text.text("COMPLETED.")
-        
-        # 4. 结尾再次暗示打赏
-        st.info("💡 Insight received? Recharge the Void to keep the oracle online.")
-
-else:
-    # 待机画面
-    st.markdown("""
-    > "The stars are not silent; they are merely encrypted."
-    
-    Awaiting User Input on Sidebar...
-    """)
+        st.success("✅ TRANSMISSION COMPLETE")
