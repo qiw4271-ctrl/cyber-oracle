@@ -1,7 +1,8 @@
 import streamlit as st
 import os
 import time
-import uuid  # 新增：用于生成唯一文件名，防止冲突
+import uuid
+import glob
 from kerykeion import AstrologicalSubject, KerykeionChartSVG
 from openai import OpenAI
 from geopy.geocoders import Nominatim
@@ -68,7 +69,6 @@ st.markdown("""
         transform: scale(1.02);
     }
     
-    /* 优化 SVG 显示容器 */
     .chart-container {
         display: flex;
         justify-content: center;
@@ -97,7 +97,6 @@ except Exception:
 # --- 4. 核心功能：精准定位与排盘 ---
 def get_geo_data(city_name):
     """获取城市的经纬度和时区"""
-    # 1. 常用城市快速字典
     quick_lookup = {
         "beijing": (39.9042, 116.4074, "Asia/Shanghai"),
         "北京": (39.9042, 116.4074, "Asia/Shanghai"),
@@ -116,7 +115,6 @@ def get_geo_data(city_name):
     if city_lower in quick_lookup:
         return quick_lookup[city_lower]
     
-    # 2. 在线查询
     try:
         geolocator = Nominatim(user_agent="cyber_oracle_app_v4")
         location = geolocator.geocode(city_name)
@@ -130,9 +128,8 @@ def get_geo_data(city_name):
     return None
 
 def generate_chart_svg(name, year, month, day, hour, minute, city):
-    """V4.4 修复版：适配新版 kerykeion 参数"""
+    """V4.5 暴力搜寻版：解决文件找不到的问题"""
     
-    # 1. 获取坐标
     geo_data = get_geo_data(city)
     if not geo_data:
         return None, None, f"LOCATION ERROR: Could not find '{city}'."
@@ -143,50 +140,57 @@ def generate_chart_svg(name, year, month, day, hour, minute, city):
         year, month, day = int(year), int(month), int(day)
         hour, minute = int(hour), int(minute)
         
-        # 2. 生成唯一的随机ID (防止文件冲突)
-        unique_id = uuid.uuid4().hex[:8]
-        # 使用 Title Case (首字母大写)，因为 kerykeion 可能会强制转换大小写
-        safe_filename_base = f"{name}_{unique_id}".replace(" ", "_").title()
+        # 使用不带特殊字符的纯ID，并转为小写，减少混淆
+        unique_id = uuid.uuid4().hex[:8].lower()
+        clean_name = name.strip().replace(" ", "_")
         
-        # 3. 创建星盘对象
+        # 构造名字，这里去掉 .title() 以防大小写不可控
+        # 我们用 unique_id 作为信标来寻找文件
+        full_name_for_lib = f"{clean_name}_{unique_id}"
+        
         subject = AstrologicalSubject(
-            safe_filename_base, 
+            full_name_for_lib, 
             year, month, day, hour, minute, 
             city=city, 
             lat=lat, lng=lng, tz_str=tz_str,
             online=False
         )
         
-        # 4. 生成 SVG 
-        # 【修正点】使用 new_output_directory 替代旧版参数
+        # 生成 SVG
+        # 使用 new_output_directory 修复参数报错
         chart = KerykeionChartSVG(subject, theme="dark", new_output_directory=".")
         chart.makeSVG() 
         
-        # 5. 寻找文件
-        # Kerykeion 生成的文件名通常是 "Name_Chart.svg"
-        expected_filename = f"{safe_filename_base}_Chart.svg"
+        # --- 暴力搜寻逻辑 ---
+        # 不再猜测文件名，而是直接扫描目录下所有 .svg 文件
+        # 只要文件名里包含我们的 unique_id，就是它！
+        found_filename = None
+        all_files = os.listdir(".")
         
-        # 调试逻辑：双重保险查找
-        if not os.path.exists(expected_filename):
-            files = os.listdir(".")
-            for f in files:
-                if unique_id in f and f.endswith(".svg"):
-                    expected_filename = f
-                    break
+        for f in all_files:
+            # 忽略大小写进行匹配 (lower())
+            if f.endswith(".svg") and unique_id in f.lower():
+                found_filename = f
+                break
         
-        # 6. 读取并清理
-        if os.path.exists(expected_filename):
-            with open(expected_filename, "r", encoding="utf-8") as f:
+        if found_filename and os.path.exists(found_filename):
+            with open(found_filename, "r", encoding="utf-8") as f:
                 svg_content = f.read()
             
-            os.remove(expected_filename) # 删除临时文件
-            subject.name = name # 恢复用户原本的名字
+            # 清理文件
+            try:
+                os.remove(found_filename)
+            except:
+                pass # 如果删不掉就算了，不影响运行
+                
+            subject.name = name # 恢复显示用的名字
             return svg_content, subject, None
         else:
-            return None, None, "RENDER ERROR: SVG created but not found."
+            # 如果还是找不到，打印出目录下所有文件，方便我们在报错信息里看到
+            debug_info = ", ".join([f for f in all_files if f.endswith('.svg')])
+            return None, None, f"RENDER ERROR: SVG created but not found. ID: {unique_id}. Files in dir: {debug_info}"
             
     except Exception as e:
-        # 打印详细错误方便调试
         print(f"DEBUG ERROR: {e}") 
         return None, None, f"CALCULATION ERROR: {str(e)}"
 
@@ -273,7 +277,7 @@ with st.sidebar:
     )
 
 st.title("🔮 VOID PROPHET")
-st.caption("Quantum Astrology System v2077.4 (Precision Core) // Online")
+st.caption("Quantum Astrology System v2077.5 (Hunter-Killer Edition) // Online")
 
 if st.button(">> INITIALIZE SEQUENCE <<"):
     if not city:
@@ -291,14 +295,14 @@ if st.button(">> INITIALIZE SEQUENCE <<"):
         if error_msg:
             bar.progress(0)
             status.error("❌ FATAL ERROR: " + error_msg)
-            st.error("System halted. Please check city spelling.")
+            # 如果出错，给用户一个更具体的提示
+            st.error("System halted. Please try a different City name or check logs.")
         else:
             # 2. 显示星盘
             bar.progress(50)
             status.markdown("`Rendering Natal Matrix...`")
             
             if svg_content:
-                # 使用 HTML div 容器直接渲染 SVG，比 st.image 更清晰且支持透明背景
                 st.markdown(f'<div class="chart-container">{svg_content}</div>', unsafe_allow_html=True)
             
             # 3. AI 解读
